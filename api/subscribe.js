@@ -152,33 +152,33 @@ export default async function handler(req, res) {
     const listId = await ensureListId(key);
 
     // ---- kişi ekle/güncelle ----
-    // NOT: Bu Brevo hesabında FIRSTNAME + SMS aynı payload'da gönderilince
-    // FIRSTNAME düşüyor. Bu yüzden isim ile telefonu AYRI çağrılarla yazıyoruz.
-    // 1) İsim + listeye ekleme
+    // NOT: Bu Brevo hesabında CREATE (POST /contacts) yolunda Türkçe FIRSTNAME
+    // değeri düşüyor. Bu yüzden önce kişiyi listeye ekliyoruz (attribute'suz),
+    // sonra attribute'ları UPDATE (PUT) ile yazıyoruz — update Türkçe'yi ve
+    // FIRSTNAME+SMS'i birlikte doğru tutuyor.
+    // 1) Kişiyi oluştur / listeye ekle
     const cr = await brevo(key, '/contacts', 'POST', {
       email,
-      attributes: { FIRSTNAME: name },
       updateEnabled: true,
       ...(listId ? { listIds: [listId] } : {}),
     });
-    if (!cr.ok && cr.status !== 204) {
-      const j = await cr.json().catch(() => ({}));
-      if (j && j.code !== 'duplicate_parameter') {
-        console.error('[subscribe] contact hata', cr.status, JSON.stringify(j));
-      }
+    if (!cr.ok) {
+      const t = await cr.text().catch(() => '');
+      console.error('[subscribe] contact ekleme hata', cr.status, t);
     }
-    // 2) Telefon (varsa) — ayrı PUT ile; merge olur, FIRSTNAME korunur
+    // 2) Attribute'ları update ile yaz (isim + varsa telefon)
     const sms = toE164TR(phone);
-    if (sms) {
-      const pr = await brevo(
-        key,
-        `/contacts/${encodeURIComponent(email)}`,
-        'PUT',
-        { attributes: { SMS: sms } },
-      );
-      if (!pr.ok && pr.status !== 204) {
-        console.error('[subscribe] telefon güncelleme hata', pr.status);
-      }
+    const attrs = { FIRSTNAME: name };
+    if (sms) attrs.SMS = sms;
+    const pr = await brevo(
+      key,
+      `/contacts/${encodeURIComponent(email)}`,
+      'PUT',
+      { attributes: attrs },
+    );
+    if (!pr.ok && pr.status !== 204) {
+      const t = await pr.text().catch(() => '');
+      console.error('[subscribe] attribute güncelleme hata', pr.status, t);
     }
 
     // ---- otomatik mail ----
