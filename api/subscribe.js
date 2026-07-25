@@ -22,10 +22,11 @@ function brevo(key, path, method, payload) {
     method,
     headers: {
       'api-key': key,
-      'content-type': 'application/json',
+      'content-type': 'application/json; charset=utf-8',
       accept: 'application/json',
     },
-    body: payload ? JSON.stringify(payload) : undefined,
+    // Gövdeyi açıkça UTF-8 bayt olarak gönder (Türkçe karakter bozulmasın).
+    body: payload ? Buffer.from(JSON.stringify(payload), 'utf-8') : undefined,
   });
 }
 
@@ -71,7 +72,7 @@ async function ensureListId(key) {
 
 function emailHtml(name, pdfUrl) {
   const ilk = (name || '').split(' ')[0] || '';
-  return `<!doctype html><html lang="tr"><body style="margin:0;background:#F5F1EB;font-family:Arial,Helvetica,sans-serif;color:#22262e">
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;background:#F5F1EB;font-family:Arial,Helvetica,sans-serif;color:#22262e">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F1EB;padding:24px 0">
     <tr><td align="center">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #e4ddd1">
