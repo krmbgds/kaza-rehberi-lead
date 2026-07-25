@@ -124,8 +124,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' });
 
   const key = process.env.BREVO_API_KEY;
-  const fromEmail = process.env.BREVO_FROM_EMAIL || 'kerim.bagdas@sigortaninsesi.com';
+  // Gönderen: doğrulanmış domain (hasarsesi.com). Cevaplar ise kerim.bagdas'a.
+  const fromEmail = process.env.BREVO_FROM_EMAIL || 'info@hasarsesi.com';
   const fromName = process.env.BREVO_FROM_NAME || 'Sigortanın Sesi';
+  const replyToEmail = process.env.BREVO_REPLY_TO || 'kerim.bagdas@sigortaninsesi.com';
   const pdfUrl = process.env.REHBER_PDF_URL ||
     'https://sigortaninsesi-rehber.vercel.app/public/Kaza_Sonrasi_Ilk_48_Saat_Rehberi.pdf';
   if (!key) {
@@ -185,7 +187,7 @@ export default async function handler(req, res) {
     const er = await brevo(key, '/smtp/email', 'POST', {
       sender: { name: fromName, email: fromEmail },
       to: [{ email, name }],
-      replyTo: { email: fromEmail, name: fromName },
+      replyTo: { email: replyToEmail, name: fromName },
       subject: 'Rehberiniz hazır: Kaza Sonrası İlk 48 Saat',
       htmlContent: emailHtml(name, pdfUrl),
       textContent: emailText(name, pdfUrl),
