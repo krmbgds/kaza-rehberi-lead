@@ -3,6 +3,8 @@
   "use strict";
 
   var PDF_PATH = "public/Kaza_Sonrasi_Ilk_48_Saat_Rehberi.pdf";
+  // Brevo aboneliği: tek Vercel Function (her iki sayfa da buraya POST eder).
+  var API_URL = "https://sigortaninsesi-rehber.vercel.app/api/subscribe";
 
   // Yıl
   var yil = document.getElementById("yil");
@@ -68,33 +70,41 @@
     }
 
     var lead = {
-      ad: ad.value.trim(),
+      name: ad.value.trim(),
       email: email.value.trim(),
-      telefon: telefon.value.trim(),
-      kvkk: true,
-      kaynak: "kaza-rehberi-lead",
-      tarih: new Date().toISOString()
+      phone: telefon.value.trim(),
+      kvkk: true
     };
 
-    // 1) BREVO AŞAMASI: şimdilik sadece konsola yaz
-    // Brevo API key geldiğinde bu blok fetch(...) ile değişecek.
-    console.log("[LEAD] Brevo'ya gönderilecek kayıt:", lead);
+    var btn = form.querySelector("button[type=submit]");
+    var btnText = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Gönderiliyor…"; }
 
-    // 2) Test için localStorage'a biriktir
-    try {
-      var leads = JSON.parse(localStorage.getItem("ss_leads") || "[]");
-      leads.push(lead);
-      localStorage.setItem("ss_leads", JSON.stringify(leads));
-      console.log("[LEAD] localStorage'a kaydedildi. Toplam kayıt:", leads.length);
-    } catch (err) {
-      console.warn("localStorage kullanılamadı:", err);
-    }
-
-    // 3) Teşekkür ekranını göster
-    showThankYou(lead);
-
-    // 4) PDF otomatik indir
-    triggerDownload();
+    // Brevo Function'a gönder → listeye ekle + rehber mailini yolla
+    fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(lead)
+    })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          return { ok: r.ok, data: j };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok || !res.data.ok) {
+          throw new Error((res.data && res.data.error) || "Gönderim başarısız oldu.");
+        }
+        // Başarı → teşekkür ekranı + PDF otomatik indir
+        showThankYou(lead);
+        triggerDownload();
+      })
+      .catch(function (err) {
+        showErr(err.message || "Bir hata oluştu. Lütfen tekrar deneyin.");
+      })
+      .finally(function () {
+        if (btn) { btn.disabled = false; btn.textContent = btnText; }
+      });
   });
 
   /* ---------- Teşekkür + indirme ---------- */
@@ -103,7 +113,7 @@
     var ty = document.getElementById("thankyou");
     var name = document.getElementById("tyName");
 
-    var ilk = lead.ad.split(" ")[0] || "";
+    var ilk = (lead.name || "").split(" ")[0] || "";
     name.textContent = ilk ? ilk + "!" : "!";
 
     app.hidden = true;
