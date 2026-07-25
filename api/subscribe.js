@@ -25,8 +25,10 @@ function brevo(key, path, method, payload) {
       'content-type': 'application/json; charset=utf-8',
       accept: 'application/json',
     },
-    // Gövdeyi açıkça UTF-8 bayt olarak gönder (Türkçe karakter bozulmasın).
-    body: payload ? Buffer.from(JSON.stringify(payload), 'utf-8') : undefined,
+    // String gövde: Node fetch bunu UTF-8 kodlar ve Content-Length'i doğru
+    // (bayt) hesaplar. (Buffer verince bazı runtime'larda Content-Length
+    // uyuşmazlığı olup Türkçe içeren istek reddedilebiliyor.)
+    body: payload ? JSON.stringify(payload) : undefined,
   });
 }
 
