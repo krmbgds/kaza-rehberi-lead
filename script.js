@@ -17,7 +17,8 @@
     if (el) el.addEventListener("click", openModal);
   });
   modal.addEventListener("click", function (e) {
-    if (e.target.hasAttribute("data-close")) closeModal();
+    // İç içe bir elemana tıklansa bile en yakın [data-close] yakalanır (overlay, X, Kapat).
+    if (e.target.closest("[data-close]")) closeModal();
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !modal.hidden) closeModal();

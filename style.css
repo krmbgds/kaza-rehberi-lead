@@ -17,6 +17,8 @@
 }
 
 *{box-sizing:border-box}
+/* hidden attribute'u her zaman kazansın — .modal/.thankyou gibi display kuralları onu ezmesin */
+[hidden]{display:none !important}
 html{scroll-behavior:smooth}
 body{
   margin:0;
