@@ -149,29 +149,32 @@ export default async function handler(req, res) {
     const listId = await ensureListId(key);
 
     // ---- kişi ekle/güncelle ----
-    const sms = toE164TR(phone);
-    const attributes = { FIRSTNAME: name };
-    if (sms) attributes.SMS = sms;
-    const contactPayload = {
+    // NOT: Bu Brevo hesabında FIRSTNAME + SMS aynı payload'da gönderilince
+    // FIRSTNAME düşüyor. Bu yüzden isim ile telefonu AYRI çağrılarla yazıyoruz.
+    // 1) İsim + listeye ekleme
+    const cr = await brevo(key, '/contacts', 'POST', {
       email,
-      attributes,
+      attributes: { FIRSTNAME: name },
       updateEnabled: true,
       ...(listId ? { listIds: [listId] } : {}),
-    };
-    let cr = await brevo(key, '/contacts', 'POST', contactPayload);
+    });
     if (!cr.ok && cr.status !== 204) {
-      // Geçersiz SMS gibi bir sebeple reddedilirse, telefonsuz tekrar dene.
       const j = await cr.json().catch(() => ({}));
-      if (sms) {
-        delete contactPayload.attributes.SMS;
-        cr = await brevo(key, '/contacts', 'POST', contactPayload);
+      if (j && j.code !== 'duplicate_parameter') {
+        console.error('[subscribe] contact hata', cr.status, JSON.stringify(j));
       }
-      if (!cr.ok && cr.status !== 204) {
-        const j2 = await cr.json().catch(() => ({}));
-        // "duplicate" hariç hataları logla; yine de maili göndermeyi dene.
-        if (j2 && j2.code !== 'duplicate_parameter') {
-          console.error('[subscribe] contact hata', cr.status, JSON.stringify(j2 || j));
-        }
+    }
+    // 2) Telefon (varsa) — ayrı PUT ile; merge olur, FIRSTNAME korunur
+    const sms = toE164TR(phone);
+    if (sms) {
+      const pr = await brevo(
+        key,
+        `/contacts/${encodeURIComponent(email)}`,
+        'PUT',
+        { attributes: { SMS: sms } },
+      );
+      if (!pr.ok && pr.status !== 204) {
+        console.error('[subscribe] telefon güncelleme hata', pr.status);
       }
     }
 
