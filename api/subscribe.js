@@ -47,7 +47,6 @@ const MAGNETS = {
     subject: 'Talebiniz alındı — Sigortanın Sesi',
     tag: 'acente-reklam',
     confirm: true,        // PDF yok → "talebiniz alındı" onay maili
-    notify: true,         // her gönderimde Kerim'e bildirim
     requireCompany: true, // acente adı zorunlu
   },
 };
@@ -215,36 +214,52 @@ function confirmText(name) {
     `© Sigortanın Sesi`;
 }
 
-// Kerim'e gönderilen "yeni talep" bildirim maili (kim, hangi acente, ne cevapladı).
+// Bildirim maili (TÜM lead magnet formları). answers/profil varsa (acente) ek tablo.
 function notifyHtml(d) {
-  const rows = ACENTE_ATTRS.map(([k, label]) =>
-    `<tr><td style="padding:7px 12px;color:#1F3864;font-weight:bold;border-bottom:1px solid #eef1f6;font-size:13px;white-space:nowrap;vertical-align:top">${esc(label)}</td>`
-    + `<td style="padding:7px 12px;border-bottom:1px solid #eef1f6;font-size:14px">${esc(d.answers[k] || '—')}</td></tr>`
+  const info = [];
+  info.push(['Form', esc(d.magnetLabel || '—')]);
+  info.push(['Ad Soyad', esc(d.name)]);
+  if (d.company) info.push(['Acente/Şirket', esc(d.company)]);
+  if (d.phone) info.push(['Telefon', esc(d.phone)]);
+  info.push(['E-posta', `<a href="mailto:${esc(d.email)}" style="color:#E2661C">${esc(d.email)}</a>`]);
+  if (d.profile) info.push(['Profil', `<strong style="color:#E2661C">${esc(d.profile)}</strong>`]);
+  const infoRows = info.map(([l, v]) =>
+    `<tr><td style="color:#1F3864;font-weight:bold;width:120px;padding:3px 0;vertical-align:top">${l}</td><td style="padding:3px 0">${v}</td></tr>`
   ).join('');
+  const hasAns = d.answers && ACENTE_ATTRS.some(([k]) => String(d.answers[k] || '').trim());
+  const ansBlock = hasAns
+    ? `<div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#6E7B96;margin:14px 0 8px">Test cevapları</div>`
+      + `<table role="presentation" width="100%" style="border-collapse:collapse;border:1px solid #eef1f6;border-radius:8px;overflow:hidden">`
+      + ACENTE_ATTRS.map(([k, label]) =>
+          `<tr><td style="padding:7px 12px;color:#1F3864;font-weight:bold;border-bottom:1px solid #eef1f6;font-size:13px;white-space:nowrap;vertical-align:top">${esc(label)}</td>`
+          + `<td style="padding:7px 12px;border-bottom:1px solid #eef1f6;font-size:14px">${esc(d.answers[k] || '—')}</td></tr>`
+        ).join('')
+      + `</table>`
+    : '';
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8"></head><body style="margin:0;background:#eef1f6;font-family:Arial,Helvetica,sans-serif;color:#1B2540">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:22px 0"><tr><td align="center">
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #d8e1f0">
-      <tr><td style="background:#1F3864;padding:18px 24px;color:#fff;font-family:Georgia,serif;font-size:18px;font-weight:bold">📩 Yeni Acente Reklam Talebi</td></tr>
+      <tr><td style="background:#1F3864;padding:18px 24px;color:#fff;font-family:Georgia,serif;font-size:18px;font-weight:bold">📩 Yeni Form / Lead</td></tr>
       <tr><td style="padding:22px 24px">
-        <table role="presentation" width="100%" style="font-size:14px;line-height:1.6;margin-bottom:14px">
-          <tr><td style="color:#1F3864;font-weight:bold;width:110px">Ad Soyad</td><td>${esc(d.name)}</td></tr>
-          <tr><td style="color:#1F3864;font-weight:bold">Acente</td><td>${esc(d.company)}</td></tr>
-          <tr><td style="color:#1F3864;font-weight:bold">E-posta</td><td><a href="mailto:${esc(d.email)}" style="color:#E2661C">${esc(d.email)}</a></td></tr>
-          <tr><td style="color:#1F3864;font-weight:bold">Profil</td><td><strong style="color:#E2661C">${esc(d.profile || '—')}</strong></td></tr>
-        </table>
-        <div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#6E7B96;margin:6px 0 8px">Test cevapları</div>
-        <table role="presentation" width="100%" style="border-collapse:collapse;border:1px solid #eef1f6;border-radius:8px;overflow:hidden">${rows}</table>
-        <p style="margin:16px 0 0;font-size:12px;color:#8a8f98">Bu maili doğrudan yanıtlarsanız cevabınız acenteye (${esc(d.email)}) gider.</p>
+        <table role="presentation" width="100%" style="font-size:14px;line-height:1.6;margin-bottom:${hasAns ? '6px' : '0'}">${infoRows}</table>
+        ${ansBlock}
+        <p style="margin:16px 0 0;font-size:12px;color:#8a8f98">Bu maili doğrudan yanıtlarsanız cevabınız lead'e (${esc(d.email)}) gider.</p>
       </td></tr>
     </table>
   </td></tr></table></body></html>`;
 }
 
 function notifyText(d) {
-  const lines = ACENTE_ATTRS.map(([k, label]) => `- ${label}: ${d.answers[k] || '—'}`).join('\n');
-  return `Yeni Acente Reklam Talebi\n\n` +
-    `Ad Soyad: ${d.name}\nAcente: ${d.company}\nE-posta: ${d.email}\nProfil: ${d.profile || '—'}\n\n` +
-    `Test cevapları:\n${lines}\n`;
+  let s = `Yeni Form / Lead\n\nForm: ${d.magnetLabel || '—'}\nAd Soyad: ${d.name}\n`;
+  if (d.company) s += `Acente/Şirket: ${d.company}\n`;
+  if (d.phone) s += `Telefon: ${d.phone}\n`;
+  s += `E-posta: ${d.email}\n`;
+  if (d.profile) s += `Profil: ${d.profile}\n`;
+  const hasAns = d.answers && ACENTE_ATTRS.some(([k]) => String(d.answers[k] || '').trim());
+  if (hasAns) {
+    s += `\nTest cevapları:\n` + ACENTE_ATTRS.map(([k, label]) => `- ${label}: ${d.answers[k] || '—'}`).join('\n') + '\n';
+  }
+  return s;
 }
 
 export default async function handler(req, res) {
@@ -335,18 +350,19 @@ export default async function handler(req, res) {
       console.error('[subscribe] attribute güncelleme hata', pr.status, t);
     }
 
-    // ---- Kerim'e bildirim (best-effort; başarısızlık ana akışı bozmaz) ----
-    if (m.notify) {
-      const notifyTo = process.env.BREVO_NOTIFY_TO || 'kerim.bagdas@sigortaninsesi.com';
+    // ---- Bildirim: HER lead magnet formunda (best-effort; ana akışı bozmaz) ----
+    // Adres BREVO_NOTIFY_TO env'inden; yoksa info@sigortaninsesi.com.
+    {
+      const notifyTo = process.env.BREVO_NOTIFY_TO || 'info@sigortaninsesi.com';
       try {
         await brevo(key, '/smtp/email', 'POST', {
           sender: { name: fromName, email: fromEmail },
-          to: [{ email: notifyTo, name: 'Kerim Bağdaş' }],
-          replyTo: { email, name }, // doğrudan yanıt → acenteye gider
-          subject: `Yeni acente reklam talebi — ${name}${company ? ' (' + company + ')' : ''}`,
-          htmlContent: notifyHtml({ name, email, company, profile, answers }),
-          textContent: notifyText({ name, email, company, profile, answers }),
-          tags: ['acente-reklam-bildirim'],
+          to: [{ email: notifyTo }],
+          replyTo: { email, name }, // doğrudan yanıt → lead'e gider
+          subject: `Yeni form — ${m.listName}: ${name}${company ? ' (' + company + ')' : ''}`,
+          htmlContent: notifyHtml({ magnetLabel: m.listName, name, email, phone, company, profile, answers }),
+          textContent: notifyText({ magnetLabel: m.listName, name, email, phone, company, profile, answers }),
+          tags: ['lead-bildirim', m.tag],
         });
       } catch (e) {
         console.error('[subscribe] bildirim maili hata', e && e.message);
