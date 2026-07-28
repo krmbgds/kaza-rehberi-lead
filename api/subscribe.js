@@ -41,10 +41,53 @@ const MAGNETS = {
     pdfEnv: 'RAPOR_PDF_URL',
     tag: 'sektor-raporu',
   },
+  // Acente Reklam Profili: PDF YOK. Onay maili + Kerim'e bildirim + 8 cevap attribute.
+  'acente-reklam': {
+    listName: 'Acente Reklam İlgilenenler',
+    subject: 'Talebiniz alındı — Sigortanın Sesi',
+    tag: 'acente-reklam',
+    confirm: true,        // PDF yok → "talebiniz alındı" onay maili
+    notify: true,         // her gönderimde Kerim'e bildirim
+    requireCompany: true, // acente adı zorunlu
+  },
 };
+
+// Acente Reklam formu: 8 soru → Brevo attribute (sıra + insan-okunur etiket) + PROFIL.
+const ACENTE_ATTRS = [
+  ['ACENTE_OLCEK', 'Ölçek'],
+  ['SEKTOR_YILI', 'Sektör tecrübesi'],
+  ['REKLAM_ALGISI', 'Reklam algısı'],
+  ['MUSTERI_KAYNAGI', 'Müşteri kaynağı'],
+  ['FARK', 'Ayırt edici yönü'],
+  ['GORUNURLUK', 'Görünürlük hedefi'],
+  ['REKLAM_TEPKISI', 'Reklam fırsatına tepki'],
+  ['BUTCE', 'Bütçe yaklaşımı'],
+];
+const ACENTE_PROFILE_ATTR = 'PROFIL';
 
 // Warm instance'lar için liste id'lerini isim bazında hafızada tut.
 const listIdCache = {};
+// Oluşturulmuş custom attribute'ları hafızada tut (tekrar POST etmeyelim).
+const attrEnsured = {};
+
+// Verilen custom attribute'ları Brevo'da OLUŞTUR (yoksa). Zaten varsa Brevo 400
+// döner → yok sayılır. Attribute var olmadan PUT ile değer yazılamaz.
+async function ensureAttributes(key, names) {
+  for (const name of names) {
+    if (attrEnsured[name]) continue;
+    try {
+      await brevo(key, `/contacts/attributes/normal/${encodeURIComponent(name)}`, 'POST', { type: 'text' });
+    } catch (_) { /* zaten var / geçici hata → yok say */ }
+    attrEnsured[name] = true;
+  }
+}
+
+// Basit HTML kaçışı (kullanıcı girdisi bildirim mailine gömülüyor).
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+  ));
+}
 
 function brevo(key, path, method, payload) {
   return fetch(BREVO + path, {
@@ -138,6 +181,72 @@ function emailText(name, m, pdfUrl) {
     `© Sigortanın Sesi`;
 }
 
+// PDF'siz onay maili (Acente Reklam gibi "talebiniz alındı" akışları).
+function confirmHtml(name) {
+  const ilk = (name || '').split(' ')[0] || '';
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;background:#F5F1EB;font-family:Arial,Helvetica,sans-serif;color:#22262e">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F1EB;padding:24px 0">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #e4ddd1">
+        <tr><td style="background:#1F3864;padding:22px 28px;color:#fff;font-family:Georgia,serif;font-size:20px;font-weight:bold">Sigortanın Sesi</td></tr>
+        <tr><td style="padding:28px">
+          <h1 style="margin:0 0 10px;font-family:Georgia,serif;color:#1F3864;font-size:24px">Talebiniz alındı${ilk ? ', ' + ilk : ''}!</h1>
+          <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:#3c434e">
+            Reklam profil testini tamamladığınız ve bize ulaştığınız için teşekkürler.
+            Talebiniz ekibimize iletildi — <strong>en kısa sürede size dönüş yapacağız.</strong>
+          </p>
+          <p style="margin:0;font-size:14px;line-height:1.6;color:#3c434e">
+            Bu arada aklınıza takılan olursa bu e-postayı yanıtlamanız yeterli.
+          </p>
+          <p style="margin:20px 0 0;font-size:12px;color:#8a8f98">
+            Bu e-postayı, Sigortanın Sesi reklam/iş birliği talebinde bulunduğunuz için aldınız.
+          </p>
+        </td></tr>
+        <tr><td style="background:#182c4e;padding:16px 28px;color:#9fb2d1;font-size:12px">© Sigortanın Sesi · Bağımsız sigorta medya platformu</td></tr>
+      </table>
+    </td></tr>
+  </table></body></html>`;
+}
+
+function confirmText(name) {
+  const ilk = (name || '').split(' ')[0] || '';
+  return `Talebiniz alındı${ilk ? ', ' + ilk : ''}!\n\n` +
+    `Reklam profil testini tamamladığınız için teşekkürler. Talebiniz ekibimize iletildi — en kısa sürede size dönüş yapacağız.\n\n` +
+    `© Sigortanın Sesi`;
+}
+
+// Kerim'e gönderilen "yeni talep" bildirim maili (kim, hangi acente, ne cevapladı).
+function notifyHtml(d) {
+  const rows = ACENTE_ATTRS.map(([k, label]) =>
+    `<tr><td style="padding:7px 12px;color:#1F3864;font-weight:bold;border-bottom:1px solid #eef1f6;font-size:13px;white-space:nowrap;vertical-align:top">${esc(label)}</td>`
+    + `<td style="padding:7px 12px;border-bottom:1px solid #eef1f6;font-size:14px">${esc(d.answers[k] || '—')}</td></tr>`
+  ).join('');
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"></head><body style="margin:0;background:#eef1f6;font-family:Arial,Helvetica,sans-serif;color:#1B2540">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:22px 0"><tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #d8e1f0">
+      <tr><td style="background:#1F3864;padding:18px 24px;color:#fff;font-family:Georgia,serif;font-size:18px;font-weight:bold">📩 Yeni Acente Reklam Talebi</td></tr>
+      <tr><td style="padding:22px 24px">
+        <table role="presentation" width="100%" style="font-size:14px;line-height:1.6;margin-bottom:14px">
+          <tr><td style="color:#1F3864;font-weight:bold;width:110px">Ad Soyad</td><td>${esc(d.name)}</td></tr>
+          <tr><td style="color:#1F3864;font-weight:bold">Acente</td><td>${esc(d.company)}</td></tr>
+          <tr><td style="color:#1F3864;font-weight:bold">E-posta</td><td><a href="mailto:${esc(d.email)}" style="color:#E2661C">${esc(d.email)}</a></td></tr>
+          <tr><td style="color:#1F3864;font-weight:bold">Profil</td><td><strong style="color:#E2661C">${esc(d.profile || '—')}</strong></td></tr>
+        </table>
+        <div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#6E7B96;margin:6px 0 8px">Test cevapları</div>
+        <table role="presentation" width="100%" style="border-collapse:collapse;border:1px solid #eef1f6;border-radius:8px;overflow:hidden">${rows}</table>
+        <p style="margin:16px 0 0;font-size:12px;color:#8a8f98">Bu maili doğrudan yanıtlarsanız cevabınız acenteye (${esc(d.email)}) gider.</p>
+      </td></tr>
+    </table>
+  </td></tr></table></body></html>`;
+}
+
+function notifyText(d) {
+  const lines = ACENTE_ATTRS.map(([k, label]) => `- ${label}: ${d.answers[k] || '—'}`).join('\n');
+  return `Yeni Acente Reklam Talebi\n\n` +
+    `Ad Soyad: ${d.name}\nAcente: ${d.company}\nE-posta: ${d.email}\nProfil: ${d.profile || '—'}\n\n` +
+    `Test cevapları:\n${lines}\n`;
+}
+
 export default async function handler(req, res) {
   // ---- CORS ----
   const origin = req.headers.origin || '';
@@ -166,6 +275,8 @@ export default async function handler(req, res) {
   const phone = String(body.phone || '').trim();
   const company = String(body.company || '').trim();
   const kvkk = body.kvkk === true;
+  const answers = (body.answers && typeof body.answers === 'object') ? body.answers : {};
+  const profile = String(body.profile || '').trim();
 
   // Hangi lead magnet? Bilinmeyen slug → kaza-rehberi (güvenli varsayılan).
   const slug = MAGNETS[String(body.list || '').trim()] ? String(body.list).trim() : 'kaza-rehberi';
@@ -177,6 +288,9 @@ export default async function handler(req, res) {
   }
   if (!kvkk) {
     return res.status(400).json({ ok: false, error: 'Devam için KVKK onayı gerekli.' });
+  }
+  if (m.requireCompany && !company) {
+    return res.status(400).json({ ok: false, error: 'Acente adı gerekli.' });
   }
 
   try {
@@ -201,6 +315,15 @@ export default async function handler(req, res) {
     const attrs = { FIRSTNAME: name };
     if (sms) attrs.SMS = sms;
     if (company) attrs.FIRM_NAME = company; // acente/şirket adı
+    // Acente Reklam: 8 cevabı + profili ayrı attribute olarak yaz (önce oluştur).
+    if (slug === 'acente-reklam') {
+      await ensureAttributes(key, ACENTE_ATTRS.map((a) => a[0]).concat([ACENTE_PROFILE_ATTR]));
+      for (const [k] of ACENTE_ATTRS) {
+        const v = String(answers[k] || '').trim();
+        if (v) attrs[k] = v.slice(0, 250);
+      }
+      if (profile) attrs[ACENTE_PROFILE_ATTR] = profile.slice(0, 120);
+    }
     const pr = await brevo(
       key,
       `/contacts/${encodeURIComponent(email)}`,
@@ -212,14 +335,32 @@ export default async function handler(req, res) {
       console.error('[subscribe] attribute güncelleme hata', pr.status, t);
     }
 
-    // ---- otomatik mail ----
+    // ---- Kerim'e bildirim (best-effort; başarısızlık ana akışı bozmaz) ----
+    if (m.notify) {
+      const notifyTo = process.env.BREVO_NOTIFY_TO || 'kerim.bagdas@sigortaninsesi.com';
+      try {
+        await brevo(key, '/smtp/email', 'POST', {
+          sender: { name: fromName, email: fromEmail },
+          to: [{ email: notifyTo, name: 'Kerim Bağdaş' }],
+          replyTo: { email, name }, // doğrudan yanıt → acenteye gider
+          subject: `Yeni acente reklam talebi — ${name}${company ? ' (' + company + ')' : ''}`,
+          htmlContent: notifyHtml({ name, email, company, profile, answers }),
+          textContent: notifyText({ name, email, company, profile, answers }),
+          tags: ['acente-reklam-bildirim'],
+        });
+      } catch (e) {
+        console.error('[subscribe] bildirim maili hata', e && e.message);
+      }
+    }
+
+    // ---- otomatik mail (lead'e) ----
     const er = await brevo(key, '/smtp/email', 'POST', {
       sender: { name: fromName, email: fromEmail },
       to: [{ email, name }],
       replyTo: { email: replyToEmail, name: fromName },
       subject: m.subject,
-      htmlContent: emailHtml(name, m, pdfUrl),
-      textContent: emailText(name, m, pdfUrl),
+      htmlContent: m.confirm ? confirmHtml(name) : emailHtml(name, m, pdfUrl),
+      textContent: m.confirm ? confirmText(name) : emailText(name, m, pdfUrl),
       tags: [m.tag],
     });
     if (!er.ok) {
