@@ -1,6 +1,6 @@
 // Sigortanın Sesi — lead aboneliği (Brevo), çok-magnet.
 // POST /api/subscribe  { name, email, phone?, company?, kvkk, list? }
-//   list: 'kaza-rehberi' (varsayılan) | 'sektor-raporu'
+//   list: 'kaza-rehberi' (varsayılan) | 'sektor-raporu' | 'acente-reklam' | 'hikayeler'
 // - Kişiyi ilgili Brevo listesine ekler (yoksa oluşturur)
 // - Otomatik "hazır" mailini gönderir (PDF linki + Sigorta Pusula)
 // API anahtarı YALNIZCA sunucuda: process.env.BREVO_API_KEY (Vercel env var).
@@ -48,6 +48,23 @@ const MAGNETS = {
     tag: 'acente-reklam',
     confirm: true,        // PDF yok → "talebiniz alındı" onay maili
     requireCompany: true, // acente adı zorunlu
+  },
+  // Sessizin Ardında — hikâye serisi (otomatik mail dizisi). PDF YOK.
+  // ŞİMDİLİK: sadece kayıt + hoş geldin/onay maili. Hikâye metinleri ve 3 günlük
+  // gecikmeli dizi (Brevo Automation) SONRA eklenecek. Sadece Ad + E-posta alınır.
+  'hikayeler': {
+    listName: 'Hikâye Serisi',
+    subject: 'Sessizin Ardında — kaydınız alındı',
+    tag: 'hikayeler',
+    confirm: true,
+    confirmHeading: 'Kaydınız alındı',
+    confirmLead:
+      'Sessizin Ardında serisine kaydınız alındı. <strong>Üç hikâye, üç gün arayla</strong> e-postanıza gelecek. Her biri gerçek bir dosyadan — isimler değişti, geri kalanı olduğu gibi.',
+    confirmSub:
+      'İlki çok yakında sizinle olacak. Aklınıza takılan olursa bu e-postayı yanıtlamanız yeterli.',
+    confirmFoot: 'Bu e-postayı, Sessizin Ardında serisine kaydolduğunuz için aldınız.',
+    confirmLeadText:
+      'Sessizin Ardında serisine kaydınız alındı. Üç hikâye, üç gün arayla e-postanıza gelecek. Her biri gerçek bir dosyadan — isimler değişti, geri kalanı olduğu gibi. İlki çok yakında sizinle olacak.',
   },
 };
 
@@ -180,25 +197,30 @@ function emailText(name, m, pdfUrl) {
     `© Sigortanın Sesi`;
 }
 
-// PDF'siz onay maili (Acente Reklam gibi "talebiniz alındı" akışları).
-function confirmHtml(name) {
+// PDF'siz onay maili (Acente Reklam / Hikâye Serisi gibi "talebiniz alındı" akışları).
+// Metinler magnet'e göre değişir; verilmezse Acente Reklam varsayılanları kullanılır.
+function confirmHtml(name, m = {}) {
   const ilk = (name || '').split(' ')[0] || '';
+  const heading = (m.confirmHeading || 'Talebiniz alındı') + (ilk ? ', ' + ilk : '') + '!';
+  const lead = m.confirmLead ||
+    'Reklam profil testini tamamladığınız ve bize ulaştığınız için teşekkürler. Talebiniz ekibimize iletildi — <strong>en kısa sürede size dönüş yapacağız.</strong>';
+  const sub = m.confirmSub || 'Bu arada aklınıza takılan olursa bu e-postayı yanıtlamanız yeterli.';
+  const foot = m.confirmFoot || 'Bu e-postayı, Sigortanın Sesi reklam/iş birliği talebinde bulunduğunuz için aldınız.';
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;background:#F5F1EB;font-family:Arial,Helvetica,sans-serif;color:#22262e">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F1EB;padding:24px 0">
     <tr><td align="center">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #e4ddd1">
         <tr><td style="background:#1F3864;padding:22px 28px;color:#fff;font-family:Georgia,serif;font-size:20px;font-weight:bold">Sigortanın Sesi</td></tr>
         <tr><td style="padding:28px">
-          <h1 style="margin:0 0 10px;font-family:Georgia,serif;color:#1F3864;font-size:24px">Talebiniz alındı${ilk ? ', ' + ilk : ''}!</h1>
+          <h1 style="margin:0 0 10px;font-family:Georgia,serif;color:#1F3864;font-size:24px">${heading}</h1>
           <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:#3c434e">
-            Reklam profil testini tamamladığınız ve bize ulaştığınız için teşekkürler.
-            Talebiniz ekibimize iletildi — <strong>en kısa sürede size dönüş yapacağız.</strong>
+            ${lead}
           </p>
           <p style="margin:0;font-size:14px;line-height:1.6;color:#3c434e">
-            Bu arada aklınıza takılan olursa bu e-postayı yanıtlamanız yeterli.
+            ${sub}
           </p>
           <p style="margin:20px 0 0;font-size:12px;color:#8a8f98">
-            Bu e-postayı, Sigortanın Sesi reklam/iş birliği talebinde bulunduğunuz için aldınız.
+            ${foot}
           </p>
         </td></tr>
         <tr><td style="background:#182c4e;padding:16px 28px;color:#9fb2d1;font-size:12px">© Sigortanın Sesi · Bağımsız sigorta medya platformu</td></tr>
@@ -207,11 +229,12 @@ function confirmHtml(name) {
   </table></body></html>`;
 }
 
-function confirmText(name) {
+function confirmText(name, m = {}) {
   const ilk = (name || '').split(' ')[0] || '';
-  return `Talebiniz alındı${ilk ? ', ' + ilk : ''}!\n\n` +
-    `Reklam profil testini tamamladığınız için teşekkürler. Talebiniz ekibimize iletildi — en kısa sürede size dönüş yapacağız.\n\n` +
-    `© Sigortanın Sesi`;
+  const heading = (m.confirmHeading || 'Talebiniz alındı') + (ilk ? ', ' + ilk : '') + '!';
+  const lead = m.confirmLeadText ||
+    'Reklam profil testini tamamladığınız için teşekkürler. Talebiniz ekibimize iletildi — en kısa sürede size dönüş yapacağız.';
+  return `${heading}\n\n${lead}\n\n© Sigortanın Sesi`;
 }
 
 // Bildirim maili (TÜM lead magnet formları). answers/profil varsa (acente) ek tablo.
@@ -375,8 +398,8 @@ export default async function handler(req, res) {
       to: [{ email, name }],
       replyTo: { email: replyToEmail, name: fromName },
       subject: m.subject,
-      htmlContent: m.confirm ? confirmHtml(name) : emailHtml(name, m, pdfUrl),
-      textContent: m.confirm ? confirmText(name) : emailText(name, m, pdfUrl),
+      htmlContent: m.confirm ? confirmHtml(name, m) : emailHtml(name, m, pdfUrl),
+      textContent: m.confirm ? confirmText(name, m) : emailText(name, m, pdfUrl),
       tags: [m.tag],
     });
     if (!er.ok) {
