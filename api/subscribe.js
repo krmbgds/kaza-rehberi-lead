@@ -52,6 +52,20 @@ const MAGNETS = {
   // Sessizin Ardında — hikâye serisi (otomatik mail dizisi). PDF YOK.
   // ŞİMDİLİK: sadece kayıt + hoş geldin/onay maili. Hikâye metinleri ve 3 günlük
   // gecikmeli dizi (Brevo Automation) SONRA eklenecek. Sadece Ad + E-posta alınır.
+  // Gazeteyi Kaçırma oyunu (hasarsesi.com/oyun). PDF YOK.
+  // Puan bilgisi hasarsesi.com sunucusundan gelir (body.puan / body.sira) ve
+  // hem onay mailine hem Brevo attribute'una yazılır.
+  'oyun': {
+    listName: 'Oyun Oynayanlar',
+    subject: 'Puanın kaydedildi — Gazeteyi Kaçırma',
+    tag: 'oyun',
+    confirm: true,
+    confirmHeading: 'Puanın kaydedildi',
+    confirmSub:
+      'Sıralamayı hasarsesi.com/oyun adresinden takip edebilirsin. Daha iyisini yapmak için istediğin kadar tekrar oynayabilirsin — en yüksek puanın geçerli sayılır.',
+    confirmFoot:
+      'Bu e-postayı, Sigortanın Sesi oyununda puanını kaydettiğin için aldın.',
+  },
   'hikayeler': {
     listName: 'Hikâye Serisi',
     subject: 'Sessizin Ardında — kaydınız alındı',
@@ -80,6 +94,21 @@ const ACENTE_ATTRS = [
   ['BUTCE', 'Bütçe yaklaşımı'],
 ];
 const ACENTE_PROFILE_ATTR = 'PROFIL';
+const OYUN_PUAN_ATTR = 'OYUN_PUAN';
+
+// Oyun onay mailinin giriş metni puana göre değişir (kişiye özel).
+function oyunMetinleri(puan, sira) {
+  const p = puan == null ? null : puan.toLocaleString('tr-TR');
+  const puanCumle = p ? `<strong>${p} puan</strong> ile puanın kaydedildi.` : 'Puanın kaydedildi.';
+  const siraCumle = sira ? ` Şu an sıralamada <strong>${sira}.</strong> sıradasın.` : '';
+  return {
+    confirmLead: puanCumle + siraCumle,
+    confirmLeadText:
+      (p ? `${p} puan ile puanın kaydedildi.` : 'Puanın kaydedildi.') +
+      (sira ? ` Şu an sıralamada ${sira}. sıradasın.` : '') +
+      ' Sıralamayı hasarsesi.com/oyun adresinden takip edebilirsin.',
+  };
+}
 
 // Warm instance'lar için liste id'lerini isim bazında hafızada tut.
 const listIdCache = {};
@@ -321,6 +350,11 @@ export default async function handler(req, res) {
   const m = MAGNETS[slug];
   const pdfUrl = process.env[m.pdfEnv] || m.pdfDefault;
 
+  // Oyun: puan/sıra kişiye özel olduğu için mail metni istek başına üretilir.
+  const oyunPuan = Number.isFinite(Number(body.puan)) ? Math.max(0, Math.floor(Number(body.puan))) : null;
+  const oyunSira = Number.isFinite(Number(body.sira)) ? Math.floor(Number(body.sira)) : null;
+  const mail = slug === 'oyun' ? { ...m, ...oyunMetinleri(oyunPuan, oyunSira) } : m;
+
   if (!name || !EMAIL_RE.test(email)) {
     return res.status(400).json({ ok: false, error: 'Ad soyad ve geçerli e-posta gerekli.' });
   }
@@ -362,6 +396,11 @@ export default async function handler(req, res) {
       }
       if (profile) attrs[ACENTE_PROFILE_ATTR] = profile.slice(0, 120);
     }
+    // Oyun: en yüksek puanı kişide sakla (segment/kampanya için).
+    if (slug === 'oyun' && oyunPuan != null) {
+      await ensureAttributes(key, [OYUN_PUAN_ATTR]);
+      attrs[OYUN_PUAN_ATTR] = String(oyunPuan);
+    }
     const pr = await brevo(
       key,
       `/contacts/${encodeURIComponent(email)}`,
@@ -397,10 +436,10 @@ export default async function handler(req, res) {
       sender: { name: fromName, email: fromEmail },
       to: [{ email, name }],
       replyTo: { email: replyToEmail, name: fromName },
-      subject: m.subject,
-      htmlContent: m.confirm ? confirmHtml(name, m) : emailHtml(name, m, pdfUrl),
-      textContent: m.confirm ? confirmText(name, m) : emailText(name, m, pdfUrl),
-      tags: [m.tag],
+      subject: mail.subject,
+      htmlContent: mail.confirm ? confirmHtml(name, mail) : emailHtml(name, mail, pdfUrl),
+      textContent: mail.confirm ? confirmText(name, mail) : emailText(name, mail, pdfUrl),
+      tags: [mail.tag],
     });
     if (!er.ok) {
       const ej = await er.json().catch(() => ({}));
