@@ -95,6 +95,8 @@ const ACENTE_ATTRS = [
 ];
 const ACENTE_PROFILE_ATTR = 'PROFIL';
 const OYUN_PUAN_ATTR = 'OYUN_PUAN';
+// Trafik kaynagi: paylasim baglantisindaki utm_* parametrelerinden gelir.
+const KAYNAK_ATTRS = ['KAYNAK', 'KAYNAK_ORTAM', 'KAMPANYA'];
 
 // Oyun onay mailinin giriş metni puana göre değişir (kişiye özel).
 function oyunMetinleri(puan, sira) {
@@ -275,6 +277,8 @@ function notifyHtml(d) {
   if (d.phone) info.push(['Telefon', esc(d.phone)]);
   info.push(['E-posta', `<a href="mailto:${esc(d.email)}" style="color:#E2661C">${esc(d.email)}</a>`]);
   if (d.profile) info.push(['Profil', `<strong style="color:#E2661C">${esc(d.profile)}</strong>`]);
+  if (d.kaynak) info.push(['Geldiği yer', `<strong style="color:#1F3864">${esc(d.kaynak)}</strong>`]);
+  if (d.kampanya) info.push(['Kampanya', esc(d.kampanya)]);
   const infoRows = info.map(([l, v]) =>
     `<tr><td style="color:#1F3864;font-weight:bold;width:120px;padding:3px 0;vertical-align:top">${l}</td><td style="padding:3px 0">${v}</td></tr>`
   ).join('');
@@ -344,6 +348,10 @@ export default async function handler(req, res) {
   const kvkk = body.kvkk === true;
   const answers = (body.answers && typeof body.answers === 'object') ? body.answers : {};
   const profile = String(body.profile || '').trim();
+  const kynk = (v) => String(v || '').trim().toLowerCase().slice(0, 60);
+  const utmSource = kynk(body.utm_source);
+  const utmMedium = kynk(body.utm_medium);
+  const utmCampaign = kynk(body.utm_campaign);
 
   // Hangi lead magnet? Bilinmeyen slug → kaza-rehberi (güvenli varsayılan).
   const slug = MAGNETS[String(body.list || '').trim()] ? String(body.list).trim() : 'kaza-rehberi';
@@ -401,6 +409,13 @@ export default async function handler(req, res) {
       await ensureAttributes(key, [OYUN_PUAN_ATTR]);
       attrs[OYUN_PUAN_ATTR] = String(oyunPuan);
     }
+    // Trafik kaynagi: hangi paylasimdan geldigi kisiye islenir.
+    if (utmSource || utmMedium || utmCampaign) {
+      await ensureAttributes(key, KAYNAK_ATTRS);
+      if (utmSource) attrs.KAYNAK = utmSource;
+      if (utmMedium) attrs.KAYNAK_ORTAM = utmMedium;
+      if (utmCampaign) attrs.KAMPANYA = utmCampaign;
+    }
     const pr = await brevo(
       key,
       `/contacts/${encodeURIComponent(email)}`,
@@ -422,8 +437,8 @@ export default async function handler(req, res) {
           to: [{ email: notifyTo }],
           replyTo: { email, name }, // doğrudan yanıt → lead'e gider
           subject: `Yeni form — ${m.listName}: ${name}${company ? ' (' + company + ')' : ''}`,
-          htmlContent: notifyHtml({ magnetLabel: m.listName, name, email, phone, company, profile, answers }),
-          textContent: notifyText({ magnetLabel: m.listName, name, email, phone, company, profile, answers }),
+          htmlContent: notifyHtml({ magnetLabel: m.listName, name, email, phone, company, profile, answers, kaynak: utmSource, kampanya: utmCampaign }),
+          textContent: notifyText({ magnetLabel: m.listName, name, email, phone, company, profile, answers, kaynak: utmSource, kampanya: utmCampaign }),
           tags: ['lead-bildirim', m.tag],
         });
       } catch (e) {
